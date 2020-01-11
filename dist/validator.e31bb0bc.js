@@ -125,123 +125,244 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.default = void 0;
 
-function ownKeys(object, enumerableOnly) { var keys = Object.keys(object); if (Object.getOwnPropertySymbols) { var symbols = Object.getOwnPropertySymbols(object); if (enumerableOnly) symbols = symbols.filter(function (sym) { return Object.getOwnPropertyDescriptor(object, sym).enumerable; }); keys.push.apply(keys, symbols); } return keys; }
-
-function _objectSpread(target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i] != null ? arguments[i] : {}; if (i % 2) { ownKeys(Object(source), true).forEach(function (key) { _defineProperty(target, key, source[key]); }); } else if (Object.getOwnPropertyDescriptors) { Object.defineProperties(target, Object.getOwnPropertyDescriptors(source)); } else { ownKeys(Object(source)).forEach(function (key) { Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(source, key)); }); } } return target; }
-
-function _defineProperty(obj, key, value) { if (key in obj) { Object.defineProperty(obj, key, { value: value, enumerable: true, configurable: true, writable: true }); } else { obj[key] = value; } return obj; }
-
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
 
 function _defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } }
 
 function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
 
+/**
+ * All available validator functions
+ */
 var validatorFunctions = {
-  notEmpty: function notEmpty(value) {
+  /**
+   * Return true if it has length
+   * If trim option is present, ignore whitespace
+   */
+  notEmpty: function notEmpty(value, options) {
+    if (options.trim) {
+      value = value.trim();
+    }
+
     return Boolean(value);
   },
-  regexp: function regexp(value, validator) {
-    return validator.regexp.test(value);
+
+  /**
+   * Return true if matches regexp
+   */
+  regexp: function regexp(value, options) {
+    return options.regexp.test(value);
   },
-  stringLength: function stringLength(value, validator) {
-    var min = validator.min,
-        max = validator.max,
-        trim = validator.trim;
+
+  /**
+   * Return true if matches stringLength
+   * If min option is present, check min length
+   * If max option is present, check max length
+   * If trim option is present, ignore whitespace
+   */
+  stringLength: function stringLength(value, options) {
+    var min = options.min,
+        max = options.max,
+        trim = options.trim;
     var isValid = false;
 
     if (trim) {
       value = value.trim();
     }
 
-    if (validator.min) {
+    if (options.min) {
       isValid = value.length >= min;
     }
 
-    if (validator.max) {
+    if (options.max) {
       isValid = isValid && value.length <= max;
     }
 
     return isValid;
+  },
+
+  /**
+   * Return true if numeric
+   */
+  numeric: function numeric(value) {
+    return /\d+/.test(value);
+  },
+
+  /**
+   * Run a custom validator
+   */
+  custom: function custom(value, options) {
+    return options.validatorFunction(value);
+  }
+};
+
+var throwOnCondition = function throwOnCondition(condition, message) {
+  if (condition) {
+    throw new Error("Validator: ".concat(message));
   }
 };
 
 var Validator =
 /*#__PURE__*/
 function () {
-  function Validator(config) {
+  function Validator(rootElement, config) {
     _classCallCheck(this, Validator);
 
+    this.rootElement = rootElement;
     this.config = config;
-    this.validateOnBlur = Boolean(config.validateOnBlur) || true;
-    this.validateOnInput = Boolean(config.validateOnInput) || false;
+    this.validateOnBlur = true;
+    this.validateOnInput = false;
+    this.validateOnSubmit = true;
     this.submitButton = config.submitButton;
-    this.addListeners();
+    this.fields = [];
+    this.isValid = true;
+
+    if (this.config.hasOwnProperty("validateOnBlur")) {
+      this.validateOnBlur = Boolean(config.validateOnBlur);
+    }
+
+    if (this.config.hasOwnProperty("validateOnInput")) {
+      this.validateOnInput = Boolean(config.validateOnInput);
+    }
+
+    if (this.config.hasOwnProperty("validateOnSubmit")) {
+      this.validateOnSubmit = Boolean(config.validateOnSubmit);
+    }
+
+    throwOnCondition(!rootElement || !(rootElement instanceof Element), "Root element is not an Element.");
+    throwOnCondition(this.config.submitButton && !(this.config.submitButton instanceof Element), "Submit button is not an Element.");
+    this.addValidatorsToElements();
   }
+  /**
+   * Add validator configs directly to field DOM elements
+   */
+
 
   _createClass(Validator, [{
-    key: "addListeners",
-    value: function addListeners() {
+    key: "addValidatorsToElements",
+    value: function addValidatorsToElements() {
       var _this = this;
 
-      this.config.fields.forEach(function (fieldConfig) {
-        var element = fieldConfig.element;
-        var validators = fieldConfig.validators;
-        var keys = Object.keys(validators);
-        var fieldValidations = [];
-        var self = _this;
-        keys.forEach(function (key) {
-          fieldValidations.push(_objectSpread({}, validators[key], {
-            validatorFn: validatorFunctions[key]
-          }));
-        });
+      var fieldNames = Object.keys(this.config.fields || {});
+      throwOnCondition(!fieldNames.length, "No fields provided in config.");
+      fieldNames.forEach(function (fieldName) {
+        var field = _this.rootElement.querySelector("input[name=\"".concat(fieldName, "\"]"));
+
+        if (!field) {
+          return;
+        }
+
+        var validators = _this.config.fields[fieldName].validators;
+        field.validators = validators; // Add the fields to an array, so we can access them later
+
+        _this.fields.push(field);
+      });
+      this.attachListeners();
+    }
+  }, {
+    key: "getFields",
+    value: function getFields() {
+      return this.fields;
+    }
+    /**
+     * Validate a single element
+     * @param {Element} field
+     */
+
+  }, {
+    key: "validateField",
+    value: function validateField(field) {
+      // Get the validators attached to the element
+      var fieldValidators = field.validators;
+      var validatorKeys = Object.keys(fieldValidators);
+      var errorMessages = [];
+      var isFieldValid = true;
+      validatorKeys.forEach(function (key) {
+        // Exit this iteration if the key is not a valid validator functinon
+        if (key === "callback" || typeof validatorFunctions[key] !== "function") {
+          return;
+        } // Determine if the field passes the single validator
+
+
+        var isValidatorPassing = validatorFunctions[key](field.value, field.validators[key]);
         /**
-         * Run all validator functions
+         * If the field fails a single validation,
+         * Set the field to invalid and add error message to array
          */
 
-        var runValidations = function runValidations() {
-          var value = this.value;
-          var errors = []; // Set the validator to valid by default
+        if (!isValidatorPassing) {
+          isFieldValid = false;
+          var message = field.validators[key].message;
 
-          self.isValid = true;
-          fieldValidations.forEach(function (validator) {
-            var validatorFn = validator.validatorFn,
-                message = validator.message;
-            var isValid = Boolean(validatorFn(value, validator));
+          if (message) {
+            errorMessages.push(message);
+          }
+        }
+      }); // Run the field validator callback, if it exists
 
-            if (!isValid) {
-              /**
-               * If a field fails validation
-               * Set the status to invalid & push the error message
-               */
-              self.isValid = false;
+      if (field.validators.callback && typeof field.validators.callback === "function") {
+        field.validators.callback(field, errorMessages, isFieldValid);
+      }
 
-              if (message) {
-                errors.push(message);
-              }
-            }
-          });
-          console.log(errors);
-        };
+      return isFieldValid;
+    }
+  }, {
+    key: "attachListeners",
+    value: function attachListeners() {
+      var _this2 = this;
 
-        if (_this.validateOnBlur) {
-          element.addEventListener("blur", function () {
-            runValidations.call(this);
+      var fields = this.getFields();
+      fields.forEach(function (field) {
+        if (_this2.config.validateOnInput) {
+          field.addEventListener("input", function () {
+            return _this2.validateField(field);
           });
         }
 
-        if (_this.validateOnInput) {
-          element.addEventListener("input", function () {
-            runValidations.call(this);
-          });
-        }
-
-        if (_this.submitButton && _this.submitButton instanceof Element) {
-          _this.submitButton.addEventListener("click", function () {
-            runValidations.call(_this);
+        if (_this2.config.validateOnBlur) {
+          field.addEventListener("blur", function () {
+            return _this2.validateField(field);
           });
         }
       });
+      /**
+       * Validate all fields on submit button press, if configured
+       */
+
+      if (this.config.submitButton && this.validateOnSubmit) {
+        this.config.submitButton.addEventListener("click", function (event) {
+          _this2.validateAll();
+          /**
+           * Run the on submit callback, passing the click event
+           * and form validity as parameters.
+           *
+           * This way, we can do things like prevent form submits
+           * when the form is invalid.
+           */
+
+
+          _this2.config.onSubmit(event, _this2.isValid);
+        });
+      }
+    }
+    /**
+     * Loop through each field and run the validator functions.
+     * Set the total validity of the form based on the result.
+     */
+
+  }, {
+    key: "validateAll",
+    value: function validateAll() {
+      var _this3 = this;
+
+      var fields = this.getFields();
+      this.isValid = true;
+      fields.forEach(function (field) {
+        var isFieldValid = _this3.validateField(field);
+
+        _this3.isValid = _this3.isValid && isFieldValid;
+      });
+      return this.isValid;
     }
   }]);
 
@@ -256,35 +377,78 @@ var _validator = _interopRequireDefault(require("./validator"));
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-var validator = new _validator.default({
-  fields: [{
-    element: document.getElementById("bsbInput"),
-    validators: {
-      notEmpty: {
-        message: "You must enter a BSB"
-      },
-      stringLength: {
-        min: 6,
-        max: 9,
-        trim: true,
-        message: "BSB should be between 6 and 9 characters"
+var fieldValidationCallback = function fieldValidationCallback(field, errors, isValid) {
+  var containerEl = field.closest(".form-field");
+  var messageContainer = containerEl.querySelector(".message");
+  containerEl.classList.remove("has-error");
+  messageContainer.innerHTML = "";
+
+  if (!isValid) {
+    containerEl.classList.add("has-error");
+  }
+
+  errors.forEach(function (message) {
+    var errorText = document.createElement("span");
+    errorText.className = "error-text";
+    errorText.innerText = message;
+    messageContainer.appendChild(errorText);
+  });
+};
+
+var validator = new _validator.default(document.querySelector(".form"), {
+  fields: {
+    bsb: {
+      validators: {
+        notEmpty: {
+          message: "You must enter a BSB",
+          trim: true
+        },
+        numeric: {
+          message: "BSB must be numeric"
+        },
+        stringLength: {
+          min: 6,
+          max: 9,
+          trim: true,
+          message: "BSB should be between 6 and 9 characters"
+        },
+        callback: fieldValidationCallback
+      }
+    },
+    password: {
+      validators: {
+        notEmpty: {
+          message: "You must enter a password",
+          trim: false
+        },
+        regexp: {
+          regexp: /^password$/,
+          message: 'Password should be "password"'
+        },
+        custom: {
+          message: "Must be more than 2 characters",
+          validatorFunction: function validatorFunction(value) {
+            return value.length > 2;
+          }
+        },
+        callback: fieldValidationCallback
       }
     }
-  }, {
-    element: document.getElementById("password"),
-    validators: {
-      notEmpty: {
-        message: "You must enter a password"
-      },
-      regexp: {
-        regexp: /password/,
-        message: 'Password should be "password"'
-      }
-    }
-  }],
+  },
   submitButton: document.querySelector("button"),
   validateOnBlur: true,
-  validateOnInput: true
+  validateOnInput: true,
+  validateOnSubmit: true,
+  onSubmit: function onSubmit(event, isValid) {
+    // Block form submit if invalid
+    if (!isValid) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }
+  }
+});
+document.querySelector("button").addEventListener("click", function () {
+  console.log("clicked");
 });
 },{"./validator":"validator.js"}],"../../../.config/yarn/global/node_modules/parcel-bundler/src/builtins/hmr-runtime.js":[function(require,module,exports) {
 var global = arguments[3];
@@ -314,7 +478,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "62286" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "51866" + '/');
 
   ws.onmessage = function (event) {
     checkedAssets = {};
