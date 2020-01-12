@@ -5,13 +5,34 @@
         <div class="form">
           <div class="form-field">
             <label>BSB number</label>
-            <input type="text" id="bsbInput" name="bsb" />
+            <input
+              type="text"
+              id="bsbInput"
+              name="bsb"
+              data-vr-not-empty__message="You must enter a BSB"
+              data-vr-not-empty="true"
+              data-vr-numeric="true"
+              data-vr-numeric__message="BSB must be numeric"
+              data-vr-string-length="true"
+              data-vr-string-length__min="6"
+              data-vr-string-length__max="9"
+              data-vr-string-length__trim="true"
+              data-vr-string-length__message="BSB should be between 6 and 9 characters"
+              data-vr-callback="fieldValidationCallback"
+            />
             <div class="message"></div>
           </div>
 
           <div class="form-field">
             <label>Password</label>
-            <input type="text" id="password" name="password" />
+            <input
+              type="text"
+              id="password"
+              name="password"
+              data-vr-not-empty="true"
+              data-vr-not-empty__message="You must enter a password"
+              data-vr-callback="fieldValidationCallback"
+            />
             <div class="message"></div>
           </div>
 

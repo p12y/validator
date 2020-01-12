@@ -67,6 +67,24 @@ const throwOnCondition = (condition, message) => {
   }
 };
 
+const toCamelCase = string => {
+  return string.replace(/(data-)*vr-/, "").replace(/-[a-z]/g, match => {
+    return match.toUpperCase().replace("-", "");
+  });
+};
+
+const convertType = value => {
+  if (!isNaN(Number(value))) {
+    return Number(value);
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
 export default class Validator {
   constructor(rootElement, config) {
     this.rootElement = rootElement;
@@ -108,7 +126,67 @@ export default class Validator {
    * Add validator configs directly to field DOM elements
    */
   addValidatorsToElements() {
-    const fieldNames = Object.keys(this.config.fields || {});
+    let fieldsConfig = this.config.fields;
+
+    if (this.config.declarative) {
+      const inputs = this.rootElement.querySelectorAll("input");
+
+      const fields = {};
+
+      inputs.forEach(input => {
+        const validatorAttributes = [...input.attributes].filter(attr =>
+          attr.localName.includes("vr-")
+        );
+
+        if (!validatorAttributes) {
+          return;
+        }
+
+        const ignoredValidators = [];
+
+        validatorAttributes.forEach(attr => {
+          const key = toCamelCase(attr.localName);
+          fields[input.name] = fields[input.name] || { validators: {} };
+
+          if (key.includes("__")) {
+            const [, root, modifier] = key.match("(.+)__(.+)");
+
+            fields[input.name].validators[root] =
+              typeof fields[input.name].validators[root] === "object"
+                ? {
+                    ...fields[input.name].validators[root],
+                    [modifier]: convertType(attr.nodeValue)
+                  }
+                : {
+                    [modifier]: convertType(attr.nodeValue)
+                  };
+          } else {
+            if (!convertType(attr.nodeValue)) {
+              ignoredValidators.push(key);
+            }
+
+            if (key === "callback") {
+              fields[input.name].validators[key] = window[attr.nodeValue];
+            } else {
+              fields[input.name].validators[key] =
+                fields[input.name].validators[key] ||
+                convertType(attr.nodeValue);
+            }
+          }
+        });
+
+        ignoredValidators.forEach(validatorName => {
+          if (validatorName in fields[input.name].validators) {
+            delete fields[input.name].validators[validatorName];
+          }
+        });
+      });
+      fieldsConfig = fields;
+    }
+
+    let fieldNames = Object.keys(fieldsConfig || {});
+
+    console.log(fieldsConfig);
 
     throwOnCondition(!fieldNames.length, "No fields provided in config.");
 
@@ -121,7 +199,7 @@ export default class Validator {
         return;
       }
 
-      const { validators } = this.config.fields[fieldName];
+      const { validators } = fieldsConfig[fieldName];
       field.validators = validators;
 
       // Add the fields to an array, so we can access them later
@@ -179,8 +257,11 @@ export default class Validator {
       typeof field.validators.callback === "function"
     ) {
       field.validators.callback(field, errorMessages, isFieldValid);
+    } else {
+      throw new Error(
+        `Validator: ${field.name} field: callback is not a function`
+      );
     }
-
     return isFieldValid;
   }
 
