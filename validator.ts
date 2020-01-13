@@ -373,7 +373,8 @@ export default class Validator {
              * and assign it to the validator object
              */
             throwOnCondition(
-              !window[attr.nodeValue],
+              !window[attr.nodeValue] ||
+                typeof window[attr.nodeValue] !== 'function',
               `${input.name} field: callback is not a function`
             );
 
