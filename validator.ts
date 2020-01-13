@@ -1,3 +1,131 @@
+interface ValidatorConfigI {
+  submitButton?: HTMLElement;
+  validateOnBlur?: boolean;
+  validateOnInput?: boolean;
+  validateOnSubmit?: boolean;
+  onSubmit?: (event: Event, isValid: boolean) => any;
+  fields?: {
+    [key: string]: {
+      validators: {
+        notEmpty?: {
+          message: string;
+          trim?: boolean;
+        };
+
+        numeric?: {
+          message: string;
+        };
+
+        regexp?: {
+          message: string;
+          regexp: RegExp;
+        };
+
+        stringLength?: {
+          min?: number;
+          max?: number;
+          trim?: boolean;
+          message: string;
+        };
+
+        choice?: {
+          min?: number;
+          max?: number;
+          message: string;
+        };
+
+        custom?: {
+          message: string;
+          validatorFunction: (value: string) => boolean;
+        };
+
+        callback?: ValidationCallbackI;
+      };
+    };
+  };
+  declarative?: boolean;
+}
+
+interface ValidationCallbackI {
+  (field: HTMLInputElement, errors: string[], isValid: boolean): any;
+}
+
+interface ValidatedInputElement extends HTMLInputElement {
+  validators: FieldValidatorConfigI;
+}
+
+interface FieldValidatorConfigI {
+  notEmpty?: {
+    message: string;
+    trim?: boolean;
+  };
+
+  numeric?: {
+    message: string;
+  };
+
+  stringLength?: {
+    min?: number;
+    max?: number;
+    trim?: boolean;
+    message: string;
+  };
+
+  choice?: {
+    min?: number;
+    message: string;
+  };
+
+  custom?: {
+    message: string;
+    validatorFunction: (value: string) => boolean;
+  };
+
+  callback?: ValidationCallbackI;
+}
+
+// -- UTILITY FUNCTIONS -- //
+
+/**
+ * Throw error if condition is met
+ * @param {boolean} condition
+ * @param {string} message
+ */
+const throwOnCondition = (condition: boolean, message: string): void => {
+  if (condition) {
+    throw new Error(`Validator: ${message}`);
+  }
+};
+
+/**
+ * Converts a hyphenated string to camel case
+ * Used to capture declarative element attributes
+ */
+const toCamelCase = (attr: string): string => {
+  return attr.replace(/(data-)*vr-/, '').replace(/-[a-z]/g, match => {
+    return match.toUpperCase().replace('-', '');
+  });
+};
+
+/**
+ * Converts an HTML attribute into the correct type
+ * E.g. "true" -> true
+ * @param {string} value
+ */
+const convertType = (value: string): any => {
+  if (!isNaN(Number(value))) {
+    return Number(value);
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+};
+
+// -- VALIDATOR FUNCTIONS -- //
+
 /**
  * All available validator functions
  */
@@ -6,7 +134,7 @@ const validatorFunctions = {
    * Return true if it has length
    * If trim option is present, ignore whitespace
    */
-  notEmpty: (value, options) => {
+  notEmpty: (value: string, options: { trim?: boolean }): boolean => {
     if (options.trim) {
       value = value.trim();
     }
@@ -17,7 +145,7 @@ const validatorFunctions = {
   /**
    * Return true if matches regexp
    */
-  regexp: (value, options) => {
+  regexp: (value: string, options: { regexp: RegExp }): boolean => {
     return options.regexp.test(value);
   },
 
@@ -27,7 +155,10 @@ const validatorFunctions = {
    * If max option is present, check max length
    * If trim option is present, ignore whitespace
    */
-  stringLength: (value, options) => {
+  stringLength: (
+    value: string,
+    options: { min?: number; max?: number; trim?: boolean }
+  ): boolean => {
     const { min, max, trim } = options;
     let isValid = false;
 
@@ -49,14 +180,17 @@ const validatorFunctions = {
   /**
    * Return true if numeric
    */
-  numeric: value => {
-    return /\d+/.test(value);
+  numeric: (value: string): boolean => {
+    return /^\d+$/.test(value);
   },
 
   /**
    * Run a custom validator
    */
-  custom: (value, options) => {
+  custom: (
+    value: string,
+    options: { validatorFunction: (value: string) => boolean }
+  ): boolean => {
     return options.validatorFunction(value);
   },
 
@@ -65,7 +199,10 @@ const validatorFunctions = {
    * If min option is present, check min elements selected
    * If max option is present, check max elements selected
    */
-  choice: (combinationFields, options) => {
+  choice: (
+    combinationFields: NodeListOf<HTMLInputElement>,
+    options: { min?: number; max?: number }
+  ): boolean => {
     const fieldsArr = [...combinationFields];
 
     let isValid = true;
@@ -84,50 +221,23 @@ const validatorFunctions = {
   }
 };
 
-/**
- * Throw error if condition is met
- * @param {boolean} condition
- * @param {string} message
- */
-const throwOnCondition = (condition, message) => {
-  if (condition) {
-    throw new Error(`Validator: ${message}`);
-  }
-};
-
-/**
- * Converts a hyphenated string to camel case
- * Used to capture declarative element attributes
- */
-const toCamelCase = string => {
-  return string.replace(/(data-)*vr-/, '').replace(/-[a-z]/g, match => {
-    return match.toUpperCase().replace('-', '');
-  });
-};
-
-/**
- * Converts an HTML attribute into the correct type
- * E.g. "true" -> true
- * @param {string} value
- */
-const convertType = value => {
-  if (!isNaN(Number(value))) {
-    return Number(value);
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-};
+// -- VALIDATOR CLASS -- //
 
 export default class Validator {
-  constructor(rootElement, config) {
+  rootElement: HTMLElement;
+  config: ValidatorConfigI;
+  validateOnBlur: boolean;
+  validateOnInput: boolean;
+  validateOnSubmit: boolean;
+  submitButton: HTMLElement;
+  fields: Array<ValidatedInputElement>;
+  isValid: boolean;
+
+  constructor(rootElement: HTMLElement, config: ValidatorConfigI) {
     this.rootElement = rootElement;
     this.config = config;
     this.validateOnBlur = true;
-    this.validateOnInput = false;
+    this.validateOnInput = true;
     this.validateOnSubmit = true;
     this.submitButton = config.submitButton;
     this.fields = [];
@@ -187,7 +297,7 @@ export default class Validator {
     fieldNames.forEach(fieldName => {
       const field = this.rootElement.querySelector(
         `input[name="${fieldName}"]`
-      );
+      ) as ValidatedInputElement;
 
       if (!field) {
         return;
@@ -205,7 +315,7 @@ export default class Validator {
     this.attachListeners();
   }
 
-  getDeclarativeAttrs() {
+  getDeclarativeAttrs(): ValidatorConfigI['fields'] {
     const inputs = this.rootElement.querySelectorAll('input');
     const fields = {};
 
@@ -297,7 +407,7 @@ export default class Validator {
    * Validate a single element
    * @param {Element} field
    */
-  validateField(field) {
+  validateField(field: ValidatedInputElement): boolean {
     /**
      * If the type is a radio/checkbox,
      * attributes are added to the first element,
@@ -333,7 +443,7 @@ export default class Validator {
        */
       if (key === 'choice') {
         // Get all input elemnts with the name of the selected element
-        const combinationFields = this.rootElement.querySelectorAll(
+        const combinationFields: NodeListOf<HTMLInputElement> = this.rootElement.querySelectorAll(
           `input[name="${field.name}"]`
         );
 
@@ -375,22 +485,22 @@ export default class Validator {
     return isFieldValid;
   }
 
-  attachListeners() {
+  attachListeners(): void {
     // Form event listener
-    const handleFormEvent = event => {
+    const handleFormEvent = (event: Event) => {
       if (event.target instanceof HTMLInputElement) {
-        this.validateField(event.target);
+        this.validateField(event.target as ValidatedInputElement);
       }
     };
 
     /**
      * Attach listeners with event delegation
      */
-    if (this.config.validateOnInput) {
+    if (this.validateOnInput) {
       this.rootElement.addEventListener('input', handleFormEvent);
     }
 
-    if (this.config.validateOnBlur) {
+    if (this.validateOnBlur) {
       // Use event capturing as blur event doesn't bubble
       this.rootElement.addEventListener('blur', handleFormEvent, true);
     }
@@ -401,7 +511,7 @@ export default class Validator {
      * Validate all fields on submit button press, if configured
      */
     if (this.config.submitButton && this.validateOnSubmit) {
-      this.config.submitButton.addEventListener('click', event => {
+      this.config.submitButton.addEventListener('click', (event: Event) => {
         this.validateAll();
         /**
          * Run the on submit callback, passing the click event
@@ -419,7 +529,7 @@ export default class Validator {
    * Loop through each field and run the validator functions.
    * Set the total validity of the form based on the result.
    */
-  validateAll() {
+  validateAll(): boolean {
     const fields = this.getFields();
     this.isValid = true;
 
