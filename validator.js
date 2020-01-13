@@ -169,87 +169,7 @@ export default class Validator {
      * Declarative mode (attributes added to elements)
      */
     if (this.config.declarative) {
-      const inputs = this.rootElement.querySelectorAll('input');
-      const fields = {};
-
-      inputs.forEach(input => {
-        // Grab the all of the validator attributes from the input elements
-        const validatorAttributes = [...input.attributes].filter(attr =>
-          attr.localName.includes('vr-')
-        );
-
-        // Skip validation if no attrs present
-        if (!validatorAttributes) {
-          return;
-        }
-
-        // Store validators set to false, so these can be removed
-        const ignoredValidators = [];
-
-        validatorAttributes.forEach(attr => {
-          const key = toCamelCase(attr.localName);
-          fields[input.name] = fields[input.name] || {
-            validators: {}
-          };
-
-          // Handle modifiers
-          if (key.includes('__')) {
-            const [, root, modifier] = key.match('(.+)__(.+)');
-
-            /**
-             * Add modifier values to the correct validators
-             * for each field
-             */
-            fields[input.name].validators[root] =
-              typeof fields[input.name].validators[root] === 'object'
-                ? {
-                    ...fields[input.name].validators[root],
-                    [modifier]: convertType(attr.nodeValue)
-                  }
-                : {
-                    [modifier]: convertType(attr.nodeValue)
-                  };
-          } else {
-            // Handle validators
-
-            /**
-             * If validator is set to "false", add it to list
-             * so it can be deleted later
-             */
-            if (!convertType(attr.nodeValue)) {
-              ignoredValidators.push(key);
-            }
-
-            if (key === 'callback') {
-              /**
-               * Get the callback function from the window object
-               * and assign it to the validator object
-               */
-              throwOnCondition(
-                !window[attr.nodeValue],
-                `${input.name} field: callback is not a function`
-              );
-
-              fields[input.name].validators[key] = window[attr.nodeValue];
-            } else {
-              // Set the validator object
-              fields[input.name].validators[key] =
-                fields[input.name].validators[key] ||
-                convertType(attr.nodeValue);
-            }
-          }
-        });
-
-        /**
-         * Remove all disabled validators
-         */
-        ignoredValidators.forEach(validatorName => {
-          if (validatorName in fields[input.name].validators) {
-            delete fields[input.name].validators[validatorName];
-          }
-        });
-      });
-      fieldsConfig = fields;
+      fieldsConfig = this.getDeclarativeAttrs();
     }
 
     /**
@@ -285,6 +205,90 @@ export default class Validator {
     this.attachListeners();
   }
 
+  getDeclarativeAttrs() {
+    const inputs = this.rootElement.querySelectorAll('input');
+    const fields = {};
+
+    inputs.forEach(input => {
+      // Grab the all of the validator attributes from the input elements
+      const validatorAttributes = [...input.attributes].filter(attr =>
+        attr.localName.includes('vr-')
+      );
+
+      // Skip validation if no attrs present
+      if (!validatorAttributes) {
+        return;
+      }
+
+      // Store validators set to false, so these can be removed
+      const ignoredValidators = [];
+
+      validatorAttributes.forEach(attr => {
+        const key = toCamelCase(attr.localName);
+        fields[input.name] = fields[input.name] || {
+          validators: {}
+        };
+
+        // Handle modifiers
+        if (key.includes('__')) {
+          const [, root, modifier] = key.match('(.+)__(.+)');
+
+          /**
+           * Add modifier values to the correct validators
+           * for each field
+           */
+          fields[input.name].validators[root] =
+            typeof fields[input.name].validators[root] === 'object'
+              ? {
+                  ...fields[input.name].validators[root],
+                  [modifier]: convertType(attr.nodeValue)
+                }
+              : {
+                  [modifier]: convertType(attr.nodeValue)
+                };
+        } else {
+          // Handle validators
+
+          /**
+           * If validator is set to "false", add it to list
+           * so it can be deleted later
+           */
+          if (!convertType(attr.nodeValue)) {
+            ignoredValidators.push(key);
+          }
+
+          if (key === 'callback') {
+            /**
+             * Get the callback function from the window object
+             * and assign it to the validator object
+             */
+            throwOnCondition(
+              !window[attr.nodeValue],
+              `${input.name} field: callback is not a function`
+            );
+
+            fields[input.name].validators[key] = window[attr.nodeValue];
+          } else {
+            // Set the validator object
+            fields[input.name].validators[key] =
+              fields[input.name].validators[key] || convertType(attr.nodeValue);
+          }
+        }
+      });
+
+      /**
+       * Remove all disabled validators
+       */
+      ignoredValidators.forEach(validatorName => {
+        if (validatorName in fields[input.name].validators) {
+          delete fields[input.name].validators[validatorName];
+        }
+      });
+    });
+
+    return fields;
+  }
+
   getFields() {
     return this.fields;
   }
@@ -299,7 +303,7 @@ export default class Validator {
      * attributes are added to the first element,
      * so we need to run the validators on the first element with that name.
      */
-    if (field.type === 'radio' || field.type === 'checkbox') {
+    if (/(radio|checkbox)/.test(field.type)) {
       field = this.rootElement.querySelector(`input[name="${field.name}"]`);
     }
 
