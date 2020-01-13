@@ -58,6 +58,27 @@ const validatorFunctions = {
    */
   custom: (value, options) => {
     return options.validatorFunction(value);
+  },
+
+  /**
+   * Return true if correct number of radios/checkboxes selected
+   */
+  choice: (combinationFields, options) => {
+    const fieldsArr = [...combinationFields];
+
+    let isValid = true;
+
+    if (options.min) {
+      isValid = fieldsArr.filter(field => field.checked).length >= options.min;
+    }
+
+    if (options.max) {
+      isValid =
+        isValid &&
+        fieldsArr.filter(field => field.checked).length <= options.max;
+    }
+
+    return isValid;
   }
 };
 
@@ -68,8 +89,8 @@ const throwOnCondition = (condition, message) => {
 };
 
 const toCamelCase = string => {
-  return string.replace(/(data-)*vr-/, "").replace(/-[a-z]/g, match => {
-    return match.toUpperCase().replace("-", "");
+  return string.replace(/(data-)*vr-/, '').replace(/-[a-z]/g, match => {
+    return match.toUpperCase().replace('-', '');
   });
 };
 
@@ -96,27 +117,27 @@ export default class Validator {
     this.fields = [];
     this.isValid = true;
 
-    if (this.config.hasOwnProperty("validateOnBlur")) {
+    if (this.config.hasOwnProperty('validateOnBlur')) {
       this.validateOnBlur = Boolean(config.validateOnBlur);
     }
 
-    if (this.config.hasOwnProperty("validateOnInput")) {
+    if (this.config.hasOwnProperty('validateOnInput')) {
       this.validateOnInput = Boolean(config.validateOnInput);
     }
 
-    if (this.config.hasOwnProperty("validateOnSubmit")) {
+    if (this.config.hasOwnProperty('validateOnSubmit')) {
       this.validateOnSubmit = Boolean(config.validateOnSubmit);
     }
 
     throwOnCondition(
       !rootElement || !(rootElement instanceof Element),
-      "Root element is not an Element."
+      'Root element is not an Element.'
     );
 
     throwOnCondition(
       this.config.submitButton &&
         !(this.config.submitButton instanceof Element),
-      "Submit button is not an Element."
+      'Submit button is not an Element.'
     );
 
     this.addValidatorsToElements();
@@ -129,13 +150,13 @@ export default class Validator {
     let fieldsConfig = this.config.fields;
 
     if (this.config.declarative) {
-      const inputs = this.rootElement.querySelectorAll("input");
+      const inputs = this.rootElement.querySelectorAll('input');
 
       const fields = {};
 
       inputs.forEach(input => {
         const validatorAttributes = [...input.attributes].filter(attr =>
-          attr.localName.includes("vr-")
+          attr.localName.includes('vr-')
         );
 
         if (!validatorAttributes) {
@@ -148,11 +169,11 @@ export default class Validator {
           const key = toCamelCase(attr.localName);
           fields[input.name] = fields[input.name] || { validators: {} };
 
-          if (key.includes("__")) {
-            const [, root, modifier] = key.match("(.+)__(.+)");
+          if (key.includes('__')) {
+            const [, root, modifier] = key.match('(.+)__(.+)');
 
             fields[input.name].validators[root] =
-              typeof fields[input.name].validators[root] === "object"
+              typeof fields[input.name].validators[root] === 'object'
                 ? {
                     ...fields[input.name].validators[root],
                     [modifier]: convertType(attr.nodeValue)
@@ -165,7 +186,7 @@ export default class Validator {
               ignoredValidators.push(key);
             }
 
-            if (key === "callback") {
+            if (key === 'callback') {
               fields[input.name].validators[key] = window[attr.nodeValue];
             } else {
               fields[input.name].validators[key] =
@@ -188,7 +209,7 @@ export default class Validator {
 
     console.log(fieldsConfig);
 
-    throwOnCondition(!fieldNames.length, "No fields provided in config.");
+    throwOnCondition(!fieldNames.length, 'No fields provided in config.');
 
     fieldNames.forEach(fieldName => {
       const field = this.rootElement.querySelector(
@@ -218,23 +239,46 @@ export default class Validator {
    * @param {Element} field
    */
   validateField(field) {
+    if (field.type === 'radio' || field.type === 'checkbox') {
+      field = this.rootElement.querySelector(`input[name="${field.name}"]`);
+    }
+
     // Get the validators attached to the element
     const fieldValidators = field.validators;
+
+    if (!fieldValidators) {
+      return;
+    }
+
     const validatorKeys = Object.keys(fieldValidators);
     const errorMessages = [];
     let isFieldValid = true;
 
     validatorKeys.forEach(key => {
       // Exit this iteration if the key is not a valid validator functinon
-      if (key === "callback" || typeof validatorFunctions[key] !== "function") {
+      if (key === 'callback' || typeof validatorFunctions[key] !== 'function') {
         return;
       }
 
-      // Determine if the field passes the single validator
-      const isValidatorPassing = validatorFunctions[key](
-        field.value,
-        field.validators[key]
-      );
+      let isValidatorPassing = true;
+
+      if (key === 'choice') {
+        const combinationFields = this.rootElement.querySelectorAll(
+          `input[name="${field.name}"]`
+        );
+
+        // Determine if the field passes the single validator
+        isValidatorPassing = validatorFunctions[key](
+          combinationFields,
+          field.validators[key]
+        );
+      } else {
+        // Determine if the field passes the single validator
+        isValidatorPassing = validatorFunctions[key](
+          field.value,
+          field.validators[key]
+        );
+      }
 
       /**
        * If the field fails a single validation,
@@ -254,7 +298,7 @@ export default class Validator {
     // Run the field validator callback, if it exists
     if (
       field.validators.callback &&
-      typeof field.validators.callback === "function"
+      typeof field.validators.callback === 'function'
     ) {
       field.validators.callback(field, errorMessages, isFieldValid);
     } else {
@@ -266,23 +310,27 @@ export default class Validator {
   }
 
   attachListeners() {
-    const fields = this.getFields();
-
-    fields.forEach(field => {
-      if (this.config.validateOnInput) {
-        field.addEventListener("input", () => this.validateField(field));
+    const handleFormEvent = event => {
+      if (event.target instanceof HTMLInputElement) {
+        this.validateField(event.target);
       }
+    };
 
-      if (this.config.validateOnBlur) {
-        field.addEventListener("blur", () => this.validateField(field));
-      }
-    });
+    if (this.config.validateOnInput) {
+      this.rootElement.addEventListener('input', handleFormEvent);
+    }
+
+    if (this.config.validateOnBlur) {
+      this.rootElement.addEventListener('blur', handleFormEvent, true);
+    }
+
+    this.rootElement.addEventListener('change', handleFormEvent);
 
     /**
      * Validate all fields on submit button press, if configured
      */
     if (this.config.submitButton && this.validateOnSubmit) {
-      this.config.submitButton.addEventListener("click", event => {
+      this.config.submitButton.addEventListener('click', event => {
         this.validateAll();
         /**
          * Run the on submit callback, passing the click event
