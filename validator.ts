@@ -380,7 +380,11 @@ export default class Validator {
 
             fields[input.name].validators[key] = window[attr.nodeValue];
           } else {
-            // Set the validator object
+            /**
+             * If the validator for that field doesn't already exist,
+             * set it to the value of the attribute. Otherwise, keep the
+             * current validator object as is.
+             */
             fields[input.name].validators[key] =
               fields[input.name].validators[key] || convertType(attr.nodeValue);
           }
@@ -391,9 +395,7 @@ export default class Validator {
        * Remove all disabled validators
        */
       ignoredValidators.forEach(validatorName => {
-        if (validatorName in fields[input.name].validators) {
-          delete fields[input.name].validators[validatorName];
-        }
+        delete fields[input.name].validators[validatorName];
       });
     });
 
