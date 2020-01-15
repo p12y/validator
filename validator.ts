@@ -1,87 +1,30 @@
-interface ValidatorConfigI {
-  submitButton?: HTMLElement;
+declare global {
+  interface Window {
+    [key: string]: Function;
+  }
+}
+
+interface ConfigI {
+  submitButton?: Element | null | undefined;
   validateOnBlur?: boolean;
   validateOnInput?: boolean;
   validateOnSubmit?: boolean;
-  onSubmit?: (event: Event, isValid: boolean) => any;
+  onSubmit?: (event: Event, isValid: boolean) => void;
   fields?: {
     [key: string]: {
       validators: {
-        notEmpty?: {
-          message: string;
-          trim?: boolean;
-        };
-
-        numeric?: {
-          message: string;
-        };
-
-        regexp?: {
-          message: string;
-          regexp: RegExp;
-        };
-
-        stringLength?: {
-          min?: number;
-          max?: number;
-          trim?: boolean;
-          message: string;
-        };
-
-        choice?: {
-          min?: number;
-          max?: number;
-          message: string;
-        };
-
-        custom?: {
-          message: string;
-          validatorFunction: (value: string) => boolean;
-        };
-
-        callback?: ValidationCallbackI;
+        [key: string]: {};
       };
     };
   };
   declarative?: boolean;
 }
 
-interface ValidationCallbackI {
-  (field: HTMLInputElement, errors: string[], isValid: boolean): any;
-}
-
 interface ValidatedInputElement extends HTMLInputElement {
-  validators: FieldValidatorConfigI;
-}
-
-interface FieldValidatorConfigI {
-  notEmpty?: {
-    message: string;
-    trim?: boolean;
+  validators: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    [key: string]: any;
   };
-
-  numeric?: {
-    message: string;
-  };
-
-  stringLength?: {
-    min?: number;
-    max?: number;
-    trim?: boolean;
-    message: string;
-  };
-
-  choice?: {
-    min?: number;
-    message: string;
-  };
-
-  custom?: {
-    message: string;
-    validatorFunction: (value: string) => boolean;
-  };
-
-  callback?: ValidationCallbackI;
 }
 
 // -- UTILITY FUNCTIONS -- //
@@ -109,10 +52,10 @@ const toCamelCase = (attr: string): string => {
 
 /**
  * Converts an HTML attribute into the correct type
- * E.g. "true" -> true
+ * E.g. 'true' -> true
  * @param {string} value
  */
-const convertType = (value: string): any => {
+const convertType = (value: string): string | number | boolean => {
   if (!isNaN(Number(value))) {
     return Number(value);
   }
@@ -129,7 +72,7 @@ const convertType = (value: string): any => {
 /**
  * All available validator functions
  */
-const validatorFunctions = {
+const validatorFunctions: { [key: string]: Function } = {
   /**
    * Return true if it has length
    * If trim option is present, ignore whitespace
@@ -166,11 +109,11 @@ const validatorFunctions = {
       value = value.trim();
     }
 
-    if (options.min) {
+    if (min !== undefined) {
       isValid = value.length >= min;
     }
 
-    if (options.max) {
+    if (max !== undefined) {
       isValid = isValid && value.length <= max;
     }
 
@@ -225,15 +168,15 @@ const validatorFunctions = {
 
 export default class Validator {
   rootElement: HTMLElement;
-  config: ValidatorConfigI;
+  config: ConfigI;
   validateOnBlur: boolean;
   validateOnInput: boolean;
   validateOnSubmit: boolean;
-  submitButton: HTMLElement;
+  submitButton: Element | null | undefined;
   fields: Array<ValidatedInputElement>;
   isValid: boolean;
 
-  constructor(rootElement: HTMLElement, config: ValidatorConfigI) {
+  constructor(rootElement: HTMLElement, config: ConfigI) {
     this.rootElement = rootElement;
     this.config = config;
     this.validateOnBlur = true;
@@ -243,15 +186,15 @@ export default class Validator {
     this.fields = [];
     this.isValid = true;
 
-    if (this.config.hasOwnProperty('validateOnBlur')) {
+    if (Object.prototype.hasOwnProperty.call(this.config, 'validateOnBlur')) {
       this.validateOnBlur = Boolean(config.validateOnBlur);
     }
 
-    if (this.config.hasOwnProperty('validateOnInput')) {
+    if (Object.prototype.hasOwnProperty.call(this.config, 'validateOnInput')) {
       this.validateOnInput = Boolean(config.validateOnInput);
     }
 
-    if (this.config.hasOwnProperty('validateOnSubmit')) {
+    if (Object.prototype.hasOwnProperty.call(this.config, 'validateOnSubmit')) {
       this.validateOnSubmit = Boolean(config.validateOnSubmit);
     }
 
@@ -261,8 +204,10 @@ export default class Validator {
     );
 
     throwOnCondition(
-      this.config.submitButton &&
-        !(this.config.submitButton instanceof Element),
+      Boolean(
+        this.config.submitButton &&
+          !(this.config.submitButton instanceof Element)
+      ),
       'Submit button is not an Element.'
     );
 
@@ -272,7 +217,7 @@ export default class Validator {
   /**
    * Add validator configs directly to field DOM elements
    */
-  addValidatorsToElements() {
+  addValidatorsToElements(): void {
     let fieldsConfig = this.config.fields;
 
     /**
@@ -280,48 +225,49 @@ export default class Validator {
      */
     if (this.config.declarative) {
       fieldsConfig = this.getDeclarativeAttrs();
+      throwOnCondition(
+        !fieldsConfig,
+        'No fields found in root element. Did you add any validator attributes?'
+      );
     }
+
+    throwOnCondition(!fieldsConfig, 'No fields provided in config.');
 
     /**
      * Default mode (fields provided in config)
      */
 
-    let fieldNames = Object.keys(fieldsConfig || {});
-
-    /**
-     * By now, we should have all the validation field names,
-     * if there are none, throw an error.
-     */
-    throwOnCondition(!fieldNames.length, 'No fields provided in config.');
+    const fieldNames = Object.keys(fieldsConfig || {});
 
     fieldNames.forEach(fieldName => {
       const field = this.rootElement.querySelector(
-        `input[name="${fieldName}"]`
+        `input[name='${fieldName}'],
+				select[name='${fieldName}']`
       ) as ValidatedInputElement;
 
-      if (!field) {
-        return;
+      if (field && fieldsConfig && fieldsConfig[fieldName]) {
+        // Add validators to input elements
+        const { validators } = fieldsConfig[fieldName];
+        field.validators = validators;
+
+        // Add the fields to an array, so we can access them later
+        this.fields.push(field);
       }
-
-      // Add validators to input elements
-      const { validators } = fieldsConfig[fieldName];
-      field.validators = validators;
-
-      // Add the fields to an array, so we can access them later
-      this.fields.push(field);
     });
 
     // Set up event listeners
     this.attachListeners();
   }
 
-  getDeclarativeAttrs(): ValidatorConfigI['fields'] {
-    const inputs = this.rootElement.querySelectorAll('input');
-    const fields = {};
+  getDeclarativeAttrs(): ConfigI['fields'] {
+    const inputs = this.rootElement.querySelectorAll('input') as NodeListOf<
+      ValidatedInputElement
+    >;
+    const fields: ConfigI['fields'] = {};
 
-    inputs.forEach(input => {
+    inputs.forEach((input: ValidatedInputElement) => {
       // Grab the all of the validator attributes from the input elements
-      const validatorAttributes = [...input.attributes].filter(attr =>
+      const validatorAttributes = [...input.attributes].filter((attr: Attr) =>
         attr.localName.includes('vr-')
       );
 
@@ -331,36 +277,48 @@ export default class Validator {
       }
 
       // Store validators set to false, so these can be removed
-      const ignoredValidators = [];
+      const ignoredValidators: string[] = [];
 
-      validatorAttributes.forEach(attr => {
+      validatorAttributes.forEach((attr: Attr) => {
+        if (!attr.nodeValue) {
+          return;
+        }
+
         const key = toCamelCase(attr.localName);
+
         fields[input.name] = fields[input.name] || {
           validators: {}
         };
 
-        // Handle modifiers
+        const attrRegex = /(.+)__(.+)/;
+        const matchArray = key.match(attrRegex);
+
         if (key.includes('__')) {
-          const [, root, modifier] = key.match('(.+)__(.+)');
+          // Handle modifiers
+
+          if (!(matchArray && matchArray.length === 3)) {
+            return;
+          }
+
+          const [, root, modifier] = matchArray;
 
           /**
            * Add modifier values to the correct validators
            * for each field
            */
+
           fields[input.name].validators[root] =
             typeof fields[input.name].validators[root] === 'object'
               ? {
                   ...fields[input.name].validators[root],
                   [modifier]: convertType(attr.nodeValue)
                 }
-              : {
-                  [modifier]: convertType(attr.nodeValue)
-                };
+              : { [modifier]: convertType(attr.nodeValue) };
         } else {
           // Handle validators
 
           /**
-           * If validator is set to "false", add it to list
+           * If validator is set to 'false', add it to list
            * so it can be deleted later
            */
           if (!convertType(attr.nodeValue)) {
@@ -372,13 +330,16 @@ export default class Validator {
              * Get the callback function from the window object
              * and assign it to the validator object
              */
-            throwOnCondition(
-              !window[attr.nodeValue] ||
-                typeof window[attr.nodeValue] !== 'function',
-              `${input.name} field: callback is not a function`
-            );
 
-            fields[input.name].validators[key] = window[attr.nodeValue];
+            const globalCallback = window[String(attr.nodeValue)];
+
+            if (globalCallback && typeof globalCallback === 'function') {
+              fields[input.name].validators[key] = globalCallback;
+            } else {
+              throw new Error(
+                `Validator: callback ${attr.nodeValue} is not a function.`
+              );
+            }
           } else {
             /**
              * If the validator for that field doesn't already exist,
@@ -402,7 +363,7 @@ export default class Validator {
     return fields;
   }
 
-  getFields() {
+  getFields(): ValidatedInputElement[] {
     return this.fields;
   }
 
@@ -417,18 +378,25 @@ export default class Validator {
      * so we need to run the validators on the first element with that name.
      */
     if (/(radio|checkbox)/.test(field.type)) {
-      field = this.rootElement.querySelector(`input[name="${field.name}"]`);
+      const firstElement: ValidatedInputElement | null = this.rootElement.querySelector(
+        `input[name='${field.name}']`
+      );
+
+      if (firstElement) {
+        field = firstElement;
+      }
     }
 
     // Get the validators attached to the element
     const fieldValidators = field.validators;
 
+    // Skip validation if no validators present
     if (!fieldValidators) {
-      return;
+      return true;
     }
 
     const validatorKeys = Object.keys(fieldValidators);
-    const errorMessages = [];
+    const errorMessages: string[] = [];
     let isFieldValid = true;
 
     validatorKeys.forEach(key => {
@@ -444,10 +412,10 @@ export default class Validator {
        * we need to pass in a list of input elements, so we can calculate how
        * many have been selected.
        */
-      if (key === 'choice') {
+      if (key === 'choice' && field.validators.choice) {
         // Get all input elemnts with the name of the selected element
         const combinationFields: NodeListOf<HTMLInputElement> = this.rootElement.querySelectorAll(
-          `input[name="${field.name}"]`
+          `input[name='${field.name}']`
         );
 
         // Determine if the field passes the choice validator
@@ -490,8 +458,11 @@ export default class Validator {
 
   attachListeners(): void {
     // Form event listener
-    const handleFormEvent = (event: Event) => {
-      if (event.target instanceof HTMLInputElement) {
+    const handleFormEvent = (event: Event): void => {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLSelectElement
+      ) {
         this.validateField(event.target as ValidatedInputElement);
       }
     };
@@ -523,7 +494,9 @@ export default class Validator {
          * This way, we can do things like prevent form submits
          * when the form is invalid.
          */
-        this.config.onSubmit(event, this.isValid);
+        if (typeof this.config.onSubmit === 'function') {
+          this.config.onSubmit(event, this.isValid);
+        }
       });
     }
   }
