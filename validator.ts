@@ -137,6 +137,12 @@ const validatorFunctions: { [key: string]: Function } = {
     return options.validatorFunction(value);
   },
 
+  customAsync: async (value: string, fn: Function, callback: Function): Promise<boolean> => {
+    const result = await fn(value);
+    callback(result);
+    return Boolean(result);
+  },
+
   /**
    * Return true if correct number of radios/checkboxes selected
    * If min option is present, check min elements selected
@@ -175,6 +181,7 @@ export default class Validator {
   submitButton: Element | null | undefined;
   fields: Array<ValidatedInputElement>;
   isValid: boolean;
+  isAwaiting: boolean;
 
   constructor(rootElement: HTMLElement, config: ConfigI) {
     this.rootElement = rootElement;
@@ -185,6 +192,7 @@ export default class Validator {
     this.submitButton = config.submitButton;
     this.fields = [];
     this.isValid = true;
+    this.isAwaiting = false;
 
     if (Object.prototype.hasOwnProperty.call(this.config, 'validateOnBlur')) {
       this.validateOnBlur = Boolean(config.validateOnBlur);
@@ -423,7 +431,21 @@ export default class Validator {
           combinationFields,
           field.validators.choice
         );
-      } else {
+      } else if (key === 'customAsync') {
+        this.isAwaiting = true;
+
+        const callback = (res) => {
+          console.log('callback running', res)
+          field.validators.callback(field, errorMessages, res);
+          this.isAwaiting = false;
+        }
+
+        validatorFunctions[key](
+          field.value,
+          field.validators.customAsync,
+          callback,
+        );
+       } else {
         // Determine if the field passes a single, generic validator
         isValidatorPassing = validatorFunctions[key](
           field.value,
@@ -435,7 +457,7 @@ export default class Validator {
        * If the field fails a single validation,
        * set the field to invalid and add error message to array
        */
-      if (!isValidatorPassing) {
+      if (!isValidatorPassing || this.isAwaiting) {
         isFieldValid = false;
 
         const message = field.validators[key].message;
