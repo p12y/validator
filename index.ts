@@ -1,4 +1,4 @@
-import Validator from './validator';
+import Validator from './src/validator';
 
 declare global {
   interface Window {

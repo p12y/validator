@@ -1,170 +1,17 @@
-declare global {
-  interface Window {
-    [key: string]: Function;
-  }
-}
-
-interface ConfigI {
-  submitButton?: Element | null | undefined;
-  validateOnBlur?: boolean;
-  validateOnInput?: boolean;
-  validateOnSubmit?: boolean;
-  onSubmit?: (event: Event, isValid: boolean) => void;
-  fields?: {
-    [key: string]: {
-      validators: {
-        [key: string]: {};
-      };
-    };
-  };
-  declarative?: boolean;
-}
-
-interface ValidatedInputElement extends HTMLInputElement {
-  validators: {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [key: string]: any;
-  };
-}
-
-// -- UTILITY FUNCTIONS -- //
-
-/**
- * Throw error if condition is met
- * @param {boolean} condition
- * @param {string} message
- */
-const throwOnCondition = (condition: boolean, message: string): void => {
-  if (condition) {
-    throw new Error(`Validator: ${message}`);
-  }
-};
-
-/**
- * Converts a hyphenated string to camel case
- * Used to capture declarative element attributes
- */
-const toCamelCase = (attr: string): string => {
-  return attr.replace(/(data-)*vr-/, '').replace(/-[a-z]/g, match => {
-    return match.toUpperCase().replace('-', '');
-  });
-};
-
-/**
- * Converts an HTML attribute into the correct type
- * E.g. 'true' -> true
- * @param {string} value
- */
-const convertType = (value: string): string | number | boolean => {
-  if (!isNaN(Number(value))) {
-    return Number(value);
-  }
-
-  try {
-    return JSON.parse(value);
-  } catch {
-    return value;
-  }
-};
-
-// -- VALIDATOR FUNCTIONS -- //
-
-/**
- * All available validator functions
- */
-const validatorFunctions: { [key: string]: Function } = {
-  /**
-   * Return true if it has length
-   * If trim option is present, ignore whitespace
-   */
-  notEmpty: (value: string, options: { trim?: boolean }): boolean => {
-    if (options.trim) {
-      value = value.trim();
-    }
-
-    return Boolean(value);
-  },
-
-  /**
-   * Return true if matches regexp
-   */
-  regexp: (value: string, options: { regexp: RegExp }): boolean => {
-    return options.regexp.test(value);
-  },
-
-  /**
-   * Return true if matches stringLength
-   * If min option is present, check min length
-   * If max option is present, check max length
-   * If trim option is present, ignore whitespace
-   */
-  stringLength: (
-    value: string,
-    options: { min?: number; max?: number; trim?: boolean }
-  ): boolean => {
-    const { min, max, trim } = options;
-    let isValid = false;
-
-    if (trim) {
-      value = value.trim();
-    }
-
-    if (min !== undefined) {
-      isValid = value.length >= min;
-    }
-
-    if (max !== undefined) {
-      isValid = isValid && value.length <= max;
-    }
-
-    return isValid;
-  },
-
-  /**
-   * Return true if numeric
-   */
-  numeric: (value: string): boolean => {
-    return /^\d+$/.test(value);
-  },
-
-  /**
-   * Run a custom validator
-   */
-  custom: (
-    value: string,
-    options: { validatorFunction: (value: string) => boolean }
-  ): boolean => {
-    return options.validatorFunction(value);
-  },
-
-  /**
-   * Return true if correct number of radios/checkboxes selected
-   * If min option is present, check min elements selected
-   * If max option is present, check max elements selected
-   */
-  choice: (
-    combinationFields: NodeListOf<HTMLInputElement>,
-    options: { min?: number; max?: number }
-  ): boolean => {
-    const fieldsArr = [...combinationFields];
-
-    let isValid = true;
-
-    if (options.min) {
-      isValid = fieldsArr.filter(field => field.checked).length >= options.min;
-    }
-
-    if (options.max) {
-      isValid =
-        isValid &&
-        fieldsArr.filter(field => field.checked).length <= options.max;
-    }
-
-    return isValid;
-  }
-};
-
-// -- VALIDATOR CLASS -- //
+import {
+  ConfigI,
+  ValidatedInputElement,
+  Callback,
+  FieldValidators,
+  ValidatorFunctionTypes
+} from './types';
+import {
+  throwOnCondition,
+  toCamelCase,
+  convertType,
+  isValidFunctionName
+} from './utilities';
+import { validatorFunctions } from './validators';
 
 export default class Validator {
   rootElement: HTMLElement;
@@ -259,11 +106,11 @@ export default class Validator {
     this.attachListeners();
   }
 
-  getDeclarativeAttrs(): ConfigI['fields'] {
+  getDeclarativeAttrs(): FieldValidators {
     const inputs = this.rootElement.querySelectorAll('input') as NodeListOf<
       ValidatedInputElement
     >;
-    const fields: ConfigI['fields'] = {};
+    const fields: FieldValidators = {};
 
     inputs.forEach((input: ValidatedInputElement) => {
       // Grab the all of the validator attributes from the input elements
@@ -307,13 +154,15 @@ export default class Validator {
            * for each field
            */
 
-          fields[input.name].validators[root] =
-            typeof fields[input.name].validators[root] === 'object'
-              ? {
-                  ...fields[input.name].validators[root],
-                  [modifier]: convertType(attr.nodeValue)
-                }
-              : { [modifier]: convertType(attr.nodeValue) };
+          if (isValidFunctionName(root)) {
+            fields[input.name].validators[root] =
+              typeof fields[input.name].validators[root] === 'object'
+                ? {
+                    ...fields[input.name].validators[root],
+                    [modifier]: convertType(attr.nodeValue)
+                  }
+                : { [modifier]: convertType(attr.nodeValue) };
+          }
         } else {
           // Handle validators
 
@@ -331,7 +180,7 @@ export default class Validator {
              * and assign it to the validator object
              */
 
-            const globalCallback = window[String(attr.nodeValue)];
+            const globalCallback = window[String(attr.nodeValue)] as Callback;
 
             if (globalCallback && typeof globalCallback === 'function') {
               fields[input.name].validators[key] = globalCallback;
@@ -340,14 +189,6 @@ export default class Validator {
                 `Validator: callback ${attr.nodeValue} is not a function.`
               );
             }
-          } else {
-            /**
-             * If the validator for that field doesn't already exist,
-             * set it to the value of the attribute. Otherwise, keep the
-             * current validator object as is.
-             */
-            fields[input.name].validators[key] =
-              fields[input.name].validators[key] || convertType(attr.nodeValue);
           }
         }
       });
@@ -356,7 +197,9 @@ export default class Validator {
        * Remove all disabled validators
        */
       ignoredValidators.forEach(validatorName => {
-        delete fields[input.name].validators[validatorName];
+        if (isValidFunctionName(validatorName)) {
+          delete fields[input.name].validators[validatorName];
+        }
       });
     });
 
@@ -400,6 +243,10 @@ export default class Validator {
     let isFieldValid = true;
 
     validatorKeys.forEach(key => {
+      if (!isValidFunctionName(key)) {
+        return;
+      }
+
       // Exit this iteration if the key is not a valid validator functinon
       if (key === 'callback' || typeof validatorFunctions[key] !== 'function') {
         return;
@@ -412,23 +259,27 @@ export default class Validator {
        * we need to pass in a list of input elements, so we can calculate how
        * many have been selected.
        */
-      if (key === 'choice' && field.validators.choice) {
-        // Get all input elemnts with the name of the selected element
-        const combinationFields: NodeListOf<HTMLInputElement> = this.rootElement.querySelectorAll(
-          `input[name='${field.name}']`
-        );
+      const validatorFunction = validatorFunctions[key];
 
-        // Determine if the field passes the choice validator
-        isValidatorPassing = validatorFunctions[key](
-          combinationFields,
-          field.validators.choice
-        );
-      } else {
-        // Determine if the field passes a single, generic validator
-        isValidatorPassing = validatorFunctions[key](
-          field.value,
-          field.validators[key]
-        );
+      if (typeof validatorFunction === 'function') {
+        if (key === 'choice' && field.validators.choice) {
+          // Get all input elemnts with the name of the selected element
+          const combinationFields: NodeListOf<HTMLInputElement> = this.rootElement.querySelectorAll(
+            `input[name='${field.name}']`
+          );
+
+          // Determine if the field passes the choice validator
+          isValidatorPassing = validatorFunction(
+            combinationFields,
+            field.validators.choice
+          );
+        } else {
+          // Determine if the field passes a single, generic validator
+          isValidatorPassing = validatorFunction(
+            field.value,
+            field.validators[key]
+          );
+        }
       }
 
       /**
@@ -438,7 +289,7 @@ export default class Validator {
       if (!isValidatorPassing) {
         isFieldValid = false;
 
-        const message = field.validators[key].message;
+        const message = field.validators[key]?.message;
 
         if (message) {
           errorMessages.push(message);
