@@ -1,0 +1,32 @@
+mixin form-field(label)
+  .form-field
+    if label
+      label= label
+    if block
+      block
+    .message
+
+doctype html
+html(lang="")
+  head
+    link(rel="stylesheet", href="./demo.scss")
+  body
+    .container
+      .form-container
+        form
+          +form-field("BSB number")
+            input(type="text", id="bsbInput", name="bsb")
+          +form-field("Password")
+            input(type="password", id="password", name="password")
+          +form-field
+            each val in [1, 2, 3]
+              - var id = "radio-" + val
+              label(for=id) Radio #{val}
+              input(type="radio", id=id, name="radio-example", value=val)
+          +form-field
+            each val in [1, 2, 3, 4]
+              - var id = "checkbox-" + val
+              label(for=id) Checkbox #{val}
+              input(type="checkbox", id=id, name="checkbox-example", value=val)
+          button Save
+    script(src="./demo.ts")

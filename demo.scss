@@ -16,44 +16,53 @@ body {
   display: flex;
   justify-content: center;
   align-self: center;
-  padding: 6rem;
+  padding: 1rem;
+}
+
+.form-container {
+  width: 80%;
   height: 100%;
+}
 
-  .form-container {
-    width: 80%;
-    height: 100%;
+form {
+  border: 1px dashed #919191;
+  height: 100%;
+  padding: 2rem;
+}
 
-    .form {
-      border: 1px dashed #919191;
-      height: 100%;
-      padding: 2rem;
-    }
+.form-field {
+  padding: 1rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  margin-top: 1rem;
 
-    .form-field {
-      padding: 1rem;
-      border: 1px solid transparent;
-      border-radius: 5px;
-      margin-top: 1rem;
+  &.has-error {
+    border-color: red;
+  }
 
-      &.has-error {
-        border-color: red;
-      }
-
-      .error-text {
-        margin-top: 0.5rem;
-        display: block;
-        color: red;
-      }
-    }
+  .error-text {
+    margin-top: 0.5rem;
+    display: block;
+    color: red;
   }
 }
 
-input {
+input[type="text"],
+input[type="password"] {
   padding: 0.5rem;
   border: 1px solid rgb(139, 139, 139);
   border-radius: 5px;
   font-size: 1rem;
   width: 100%;
+}
+
+.form-field {
+  input[type="radio"],
+  input[type="checkbox"] {
+    &:not(:last-of-type) {
+      margin-bottom: 1rem;
+    }
+  }
 }
 
 label {

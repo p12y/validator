@@ -1,23 +1,49 @@
-# Validator
+/**
+ * VALIDATOR USAGE EXAMPLE
+ */
 
-An unopinionated, declarative client side validator for HTML forms, with TypeScript support. Use built-in validators, or your own, custom validator with support for async validators.
+import Validator, { FormState } from "./src/validator";
 
-## Demo
+declare global {
+  interface Window {
+    fieldValidationCallback: (
+      field: HTMLInputElement,
+      errors: string[],
+      isValid: boolean
+    ) => void;
+  }
+}
 
-Run the demo project with parcel - `parcel demo.pug` and visit localhost:1234.
+/**
+ * Example callback to update the DOM
+ */
+const fieldValidationCallback = (
+  field: HTMLInputElement,
+  state: FormState,
+  errors: string[]
+) => {
+  const containerEl = field.closest(".form-field");
+  const messageContainer = containerEl.querySelector(".message");
+  containerEl.classList.remove("has-error");
 
-## Usage
+  messageContainer.innerHTML = "";
 
-The validator contructor takes two arguments, the root element that contains the input elements and a config object.
+  if (state === FormState.Invalid) {
+    containerEl.classList.add("has-error");
+  }
 
-You can pass the names of the fields into the fields object and configure the types of validation for each input element. If the name contains special characters, wrap the key in parentheses.
+  errors.forEach((message) => {
+    const errorText = document.createElement("span");
+    errorText.className = "error-text";
+    errorText.innerText = message;
 
-You can use the callback function to make updates to the DOM, however you see fit. It uses the following signature:
-`(field: HTMLInputElement, state: FormState, errors: string[]) => void;`
+    messageContainer.appendChild(errorText);
+  });
+};
 
-#### Example:
-
-```ts
+/**
+ * Example usage of the Validator class
+ */
 const validator = new Validator(document.querySelector("form"), {
   fields: {
     bsb: {
@@ -85,4 +111,11 @@ const validator = new Validator(document.querySelector("form"), {
   },
   submitButton: document.querySelector("button"),
 });
-```
+
+document.querySelector("button").addEventListener("click", (e) => {
+  if (!validator.valid) {
+    e.preventDefault();
+  } else {
+    alert("Submitted!");
+  }
+});
